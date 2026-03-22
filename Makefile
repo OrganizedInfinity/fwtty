@@ -4,7 +4,7 @@
 TARGET_DIR := build
 TARGET := $(TARGET_DIR)/fwtty
 
-OBJECTS := opts
+OBJECTS := opts pty
 
 $(TARGET_DIR):
 	mkdir $@
