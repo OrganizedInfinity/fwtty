@@ -1,7 +1,7 @@
 #ifndef INCLUDED_SRC_OPTS_H
 #define INCLUDED_SRC_OPTS_H
 
-#define VERSION 0.5
+#define VERSION 0.6
 
 #include <stdbool.h>
 
@@ -18,5 +18,6 @@ struct options {
 };
 
 int getOptions(int argc, char **argv, struct options *options);
+int getDefaultOptions(struct options *options);
 
 #endif // #ifndef INCLUDED_SRC_OPTS_H

@@ -13,7 +13,10 @@ int main(int argc, char **argv) {
 	int status = 0;
 	struct options options;	
 
-	status = getOptions(argc, argv, &options);
+	if (argc < 2)
+		status = getDefaultOptions(&options);
+	else
+		status = getOptions(argc, argv, &options);
 	if (status < 0)
 		return 0;
 	if (status > 0)

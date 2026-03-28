@@ -1,6 +1,9 @@
+#include <fcntl.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "opts.h"
 
@@ -166,13 +169,13 @@ optionParser parseArg(char *arg, struct options *options) {
 }
 
 void setDefaults(struct options *options) {
-	if (options->program == NULL)
-		options->program = "sh";
+	memset(options, 0, sizeof(struct options));
+	options->program = "sh";
 }
 
 int getOptions(int argc, char **argv, struct options *options) {
 	int status;
-	memset(options, 0, sizeof(struct options));
+	setDefaults(options);
 
 	if (argv[0] == NULL)
 		return 0;
@@ -196,8 +199,6 @@ int getOptions(int argc, char **argv, struct options *options) {
 	if (parser != NULL)
 		return parser(NULL, options);
 
-	setDefaults(options);
-
 	size_t nProgramArgs = argc - argi + 2; // args + terminating NULL + program name
 	options->programArgs = malloc(nProgramArgs * sizeof(char*));
 	options->programArgs[0] = options->program;
@@ -207,3 +208,53 @@ int getOptions(int argc, char **argv, struct options *options) {
 	return 0;
 }
 
+int getDefaultOptions(struct options *options) {
+	struct passwd* passwd = getpwuid(getuid());
+	if (passwd == NULL && passwd->pw_dir == NULL) {
+		puts("Failed to get home directory!");
+		return 57;
+	}
+
+	int home = open(passwd->pw_dir, O_DIRECTORY | O_RDONLY);
+	if (home < 0) {
+		puts("Failed to open home directory!");
+		return 58;
+	}
+	
+	int configFd = openat(home, ".fwtty.config", O_RDONLY);
+	if (configFd < 0) {
+		setDefaults(options);
+		return 0;
+	}
+
+	FILE* config = fdopen(configFd, "r");
+	if (config == NULL) {
+		setDefaults(options);
+		return 0;
+	}
+
+	char *strings = malloc(1024*sizeof(char));
+	strings[0] = '\0';
+
+	char **argv = malloc(32*sizeof(char*));
+	argv[0] = strings;
+
+	char* argBegin = &strings[1];
+	int i = 1;
+	int argc = 1;
+	for (int c = fgetc(config); i < 1024; i++, c = fgetc(config)) {
+		if (c == EOF)
+			break;
+		if (c == '\n') {
+			c = '\0';
+			argv[argc] = argBegin;
+			argBegin = &strings[i + 1];
+			argc++;
+			if (argc >= 32)
+				break;
+		}
+		strings[i] = c;
+	}
+
+	return getOptions(argc, argv, options);
+}
