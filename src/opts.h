@@ -1,7 +1,7 @@
 #ifndef INCLUDED_SRC_OPTS_H
 #define INCLUDED_SRC_OPTS_H
 
-#define VERSION 0.3
+#define VERSION 0.5
 
 #include <stdbool.h>
 
