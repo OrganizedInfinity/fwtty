@@ -236,7 +236,7 @@ int getDefaultOptions(struct options *options) {
 	char *strings = malloc(1024*sizeof(char));
 	strings[0] = '\0';
 
-	char **argv = malloc(32*sizeof(char*));
+	char **argv = malloc((32+1)*sizeof(char*));
 	argv[0] = strings;
 
 	char* argBegin = &strings[1];
@@ -255,6 +255,7 @@ int getDefaultOptions(struct options *options) {
 		}
 		strings[i] = c;
 	}
+	argv[argc] = NULL;
 
 	return getOptions(argc, argv, options);
 }
