@@ -15,7 +15,7 @@
 #define XTY_FILENO 30
 #define MAX_RTY 30
 
-sig_atomic_t windowChanged = false;
+sig_atomic_t windowChanged = true;
 sig_atomic_t sigReceived = 0;
 sig_atomic_t exitedProcess = 0;
 sig_atomic_t rtyRequestor = 0;
@@ -59,6 +59,9 @@ void* readPTY(void *arg) {
 	size_t bufferSize = IOBUFFERSIZE;
 	char buffer[IOBUFFERSIZE]; 
 	while (true) {
+		struct termios options;
+		TRY(tcgetattr(ptyMaster, &options) == 0, "Failed to acquire pseudoterminal attributes", (void*)15);
+		TRY(tcsetattr(STDIN_FILENO, TCSADRAIN, &options) == 0, "Failed to set terminal attributes", (void*)16);
 		TRY((status = read(ptyMaster, &buffer, bufferSize)) != -1, "Failed to read from pseudoterminal", (void*)9);
 		bytesRead = status;
 		TRY((errno = pthread_mutex_lock(&masterWriteMX)) == 0, "Failed to lock for writing", (void*)29);
@@ -94,29 +97,6 @@ void* writePTY(void *arg) {
 	while (true) {
 		TRY((status = read(STDIN_FILENO, &buffer, bufferSize)) != -1, "Failed to read from stdin", (void*)11);
 		TRY((status = write(ptyMaster, &buffer, status)) != -1, "Failed to write input", (void*)12);
-	}
-}
-
-void* syncTerminalOptions(void *arg) {
-	int ptySlave = *(int*)arg;
-	struct termios options, newOptions;
-	struct winsize size;
-	TRY(ioctl(STDIN_FILENO, TIOCGWINSZ, &size) == 0, "Failed to acquire terminal size", (void*)17);
-	TRY(ioctl(ptySlave, TIOCSWINSZ, &size) == 0, "Failed to set pseudoterminal size", (void*)18);
-	TRY(tcgetattr(ptySlave, &options) == 0, "Failed to acquire pseudoterminal attributes", (void*)15);
-	TRY(tcsetattr(STDIN_FILENO, TCSADRAIN, &options) == 0, "Failed to set terminal attributes", (void*)16);
-	while (true) {
-		TRY(tcgetattr(ptySlave, &newOptions) == 0, "Failed to acquire pseudoterminal attributes", (void*)15);
-		if (memcmp(&newOptions, &options, sizeof(struct termios)) != 0) {
-			options = newOptions;
-			TRY(tcsetattr(STDIN_FILENO, TCSADRAIN, &options) == 0, "Failed to set terminal attributes", (void*)16);
-		}
-		if (windowChanged == true) {
-			TRY(ioctl(STDIN_FILENO, TIOCGWINSZ, &size) == 0, "Failed to acquire terminal size", (void*)17);
-			TRY(ioctl(ptySlave, TIOCSWINSZ, &size) == 0, "Failed to set pseudoterminal size", (void*)18);
-			windowChanged = false;
-		}
-		sleep(1);
 	}
 }
 
@@ -210,6 +190,7 @@ int closeRTY(pid_t requestor) {
 int monitorChild(pid_t childPid, int ptyMaster) {
 	int status;
 	pid_t pgid;
+	struct winsize size;
 	while (true) {
 		if (rtyRequestor != 0)
 			if ((status = openRTY(rtyRequestor)) != 0)
@@ -228,6 +209,11 @@ int monitorChild(pid_t childPid, int ptyMaster) {
 			TRY((pgid = tcgetpgrp(ptyMaster)) != -1, "Failed to get terminal foreground process group", 20);
 			TRY(kill(pgid, sigReceived) != -1, "Failed to send signal to process", 21);
 			sigReceived = 0;
+		}
+		if (windowChanged == true) {
+			TRY(ioctl(STDIN_FILENO, TIOCGWINSZ, &size) == 0, "Failed to acquire terminal size", 17);
+			TRY(ioctl(ptyMaster, TIOCSWINSZ, &size) == 0, "Failed to set pseudoterminal size", 18);
+			windowChanged = false;
 		}
 		usleep(100);
 	}
@@ -261,11 +247,5 @@ int emulateTerminal(pid_t childPid, int ptyMaster, int ptySlave) {
 		return 14;
 	}
 
-	status = pthread_create(&optionsThread, NULL, syncTerminalOptions, &ptySlave);
-	if (status != 0) {
-		fprintf(stderr, "Failed to start terminal options thread: pthread_create failed with %d (%s)", status, strerror(status));
-		return 19;
-	}
-			
 	return monitorChild(childPid, ptyMaster);
 }
