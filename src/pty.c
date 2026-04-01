@@ -12,7 +12,9 @@
 #include <pwd.h>
 
 #define IOBUFFERSIZE 1024
-#define XTY_FILENO 30
+#define XTY_SLAVE_FILENO 30
+#define PTY_SLAVE_FILENO 31
+#define PTY_MASTER_FILENO 32
 #define MAX_RTY 30
 
 sig_atomic_t windowChanged = true;
@@ -22,7 +24,6 @@ sig_atomic_t rtyRequestor = 0;
 sig_atomic_t rtyExited = 0;
 
 sig_atomic_t xtyMasterFd = -1;
-sig_atomic_t ptyMasterFd;
 pthread_mutex_t masterWriteMX = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t rtyMX = PTHREAD_MUTEX_INITIALIZER;
 
@@ -84,7 +85,7 @@ void* readXTY(void *arg) {
 	while (true) {
 		TRY((status = read(xtyMaster, &buffer, bufferSize)) != -1, "Failed to read from pseudoexterminal", (void*)31);
 		TRY((errno = pthread_mutex_lock(&masterWriteMX)) == 0, "Failed to lock for writing", (void*)29);
-		TRY((status = write(ptyMasterFd, &buffer, status)) != -1, "Failed to write output", (void*)10);
+		TRY((status = write(PTY_MASTER_FILENO, &buffer, status)) != -1, "Failed to write output", (void*)10);
 		TRY((errno = pthread_mutex_unlock(&masterWriteMX)) == 0, "Failed to unlock for writing", (void*)30);
 	};
 }
@@ -108,7 +109,7 @@ int openXTY() {
 	int xtySlave;
 	pthread_t readThread;
 	TRY(openpty(&xtyMasterFd, &xtySlave, NULL, NULL, NULL) == 0, "Failed to open pseudoexterminal", 32);
-	dup2(xtySlave, XTY_FILENO);
+	dup2(xtySlave, XTY_SLAVE_FILENO);
 	close(xtySlave);
 	
 	status = pthread_create(&readThread, NULL, readXTY, &xtyMasterFd);
@@ -232,7 +233,13 @@ int emulateTerminal(pid_t childPid, int ptyMaster, int ptySlave) {
 	sigaction(SIGUSR1, &action, NULL);
 	sigaction(SIGUSR2, &action, NULL);
 
-	ptyMasterFd = ptyMaster;
+	dup2(ptyMaster, PTY_MASTER_FILENO);
+	close(ptyMaster);
+	ptyMaster = PTY_MASTER_FILENO;
+
+	dup2(ptySlave, PTY_SLAVE_FILENO);
+	close(ptySlave);
+	ptySlave = PTY_SLAVE_FILENO;
 
 	pthread_t writeThread, readThread, optionsThread;
 	status = pthread_create(&writeThread, NULL, writePTY, &ptyMaster);
